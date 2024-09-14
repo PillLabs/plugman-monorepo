@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "types": [
+      "mocha",
+      "chai",
+      "commonjs"
+    ],
+    "typeRoots": [
+      "./node_modules/@types"
+    ],
+    "lib": [
+      "es2020",
+      "dom",
+      "esnext"
+    ],
+    "module": "ESNext",
+    "moduleResolution": "node16",
+    "target": "ES2020",
+    "esModuleInterop": true
+  },
+  "ts-node": {
+    "esm": true
+  }
+}

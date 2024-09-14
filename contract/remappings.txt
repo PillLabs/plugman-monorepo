@@ -1,0 +1,14 @@
+@openzeppelin/contracts/=lib/shipyard-core/lib/openzeppelin-contracts/contracts/
+ERC721A/=lib/ERC721A/contracts/
+ds-test/=lib/shipyard-core/lib/forge-std/lib/ds-test/src/
+erc4626-tests/=lib/shipyard-core/lib/openzeppelin-contracts/lib/erc4626-tests/
+forge-std/=lib/forge-std/src/
+hot-chain-svg/=lib/shipyard-core/lib/hot-chain-svg/contracts/
+openzeppelin-contracts/=lib/shipyard-core/lib/openzeppelin-contracts/
+openzeppelin-contracts/contracts/=lib/shipyard-core/lib/openzeppelin-contracts/contracts/
+seaport-types/=lib/shipyard-core/lib/seaport-types/
+shipyard-core/=lib/shipyard-core/
+solady/=lib/shipyard-core/lib/solady/
+solarray/=lib/shipyard-core/lib/solarray/src/
+@zetachain/protocol-contracts/=lib/protocol-contracts/
+@zetachain/toolkit/=lib/toolkit/

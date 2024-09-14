@@ -1,0 +1,52 @@
+[server]
+runMode = "debug"
+addr = "0.0.0.0:8080"
+
+[chain]
+chainName = "ZetaChain Athens3"
+chainId = "7001"
+chainRpc = "https://zetachain-athens.g.allthatnode.com/archive/evm"
+#chainRpc = "http://localhost:8545"
+startBlockId = 6764617
+backoffTime = 3
+filterBlockRange = 1000
+retryInterval = 3
+scanInterval = 5
+rpcTimeout = 10
+plugmanContract = "0xC61eEDa018C353BBE8A60519a895399593899ec4"
+ethereumShuttleMachineContract = "0x79691f35BC518e3F8764Bc03619BBbcF02D2FaAf"
+polygonShuttleMachineContract = "0x305BfA7D6F7a63E4Cd7B92C932AcebB5db035ED2"
+zetaCrossChainRpc = "https://zetachain-athens.blockpi.network/lcd/v1/public"
+
+[connectedEvmChain.11155111]
+chainName = "sepolia"
+chainId = "11155111"
+chainRpc = "https://responsive-multi-pool.ethereum-sepolia.quiknode.pro/ce6e72ffa3ed18c4158cb0fc6c757f9bd7d2b0ba/"
+tssAddress = "0x8531a5aB847ff5B22D855633C25ED1DA3255247e"
+
+[connectedEvmChain.80002]
+chainName = "amoy"
+chainId = "80002"
+chainRpc = "https://polygon-amoy-bor-rpc.publicnode.com"
+tssAddress = "0x8531a5aB847ff5B22D855633C25ED1DA3255247e"
+
+[mint]
+maxCount = 5
+
+[erc712Domain]
+name = "Plugman"
+version = "1"
+chainId = 7001
+verifyingContract = "0xcf3CeEA44eDf698f2EaA599FA8f62F24B5890EbB"
+
+[mysql]
+[mysql.db]
+dsn = "x:x@tcp(127.0.0.1:3306)/plugman?timeout=5s&readTimeout=5s&writeTimeout=5s&parseTime=true&loc=Local&charset=utf8mb4"
+active = 20
+idle = 20
+connMaxLifeTime = 30
+
+[micromanager]
+metadataJson = "./micromanager/_metadata.json"
+whitelistCsv = "./micromanager/_whitelist.csv"
+

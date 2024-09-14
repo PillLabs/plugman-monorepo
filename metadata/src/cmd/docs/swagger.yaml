@@ -1,0 +1,270 @@
+basePath: /api/v1
+definitions:
+  api.GetSignatureResponse:
+    properties:
+      count:
+        type: string
+      mintType:
+        type: integer
+      nonce:
+        type: string
+      signature:
+        type: string
+      timestamp:
+        type: string
+      traitValue:
+        items:
+          type: string
+        type: array
+    type: object
+  api.GetWhitelistResponse:
+    properties:
+      og_count:
+        type: integer
+      og_minted:
+        type: integer
+      wl_count:
+        type: integer
+      wl_minted:
+        type: integer
+    type: object
+  common.Response:
+    properties:
+      data: {}
+      message:
+        type: string
+      returnCode:
+        type: integer
+    type: object
+  model.GetOrderResponse:
+    properties:
+      orders:
+        items:
+          $ref: '#/definitions/model.Order'
+        type: array
+    type: object
+  model.Order:
+    properties:
+      token_id:
+        items:
+          type: string
+        type: array
+      tss_transfer:
+        $ref: '#/definitions/model.TssTransfer'
+    type: object
+  model.PostOrderRequest:
+    properties:
+      chain_id:
+        type: string
+      from_address:
+        type: string
+      mint_type:
+        type: integer
+      nonce:
+        type: integer
+      tx_hash:
+        type: string
+    type: object
+  model.TssTransfer:
+    properties:
+      amount:
+        type: string
+      chain_id:
+        type: string
+      from_address:
+        type: string
+      mint_type:
+        type: integer
+      nonce:
+        type: integer
+      order_status:
+        type: integer
+      tx_hash:
+        type: string
+    type: object
+host: plugman-dev.demonitors.xyz
+info:
+  contact:
+    name: Maoma
+  description: plugman backend service
+  title: Plugman service
+  version: 0.1.0
+paths:
+  /mint/{address}/{mint_type}/{count}/getSignature:
+    get:
+      consumes:
+      - application/json
+      description: get signature
+      parameters:
+      - description: minter address
+        in: path
+        name: address
+        required: true
+        type: string
+      - description: mint type can be 2(WL sale) 3(Public sale)
+        in: path
+        name: mint_type
+        required: true
+        type: string
+      - description: purchase quantity for this minting
+        in: path
+        name: count
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "20000":
+          description: A successful response with ReturnCode' = 20000
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/api.GetSignatureResponse'
+              type: object
+        "20001":
+          description: invalid param
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20015":
+          description: Server internal errors, just blame backend engineer
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20021":
+          description: insufficient quota for WL sale
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20022":
+          description: invalid mint type, this param can be 2 or 3 only
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20023":
+          description: all metadata has been used
+          schema:
+            $ref: '#/definitions/common.Response'
+      summary: get signature
+      tags:
+      - mint
+  /order/{address}:
+    get:
+      consumes:
+      - application/json
+      description: get orders
+      parameters:
+      - description: minter address
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "20000":
+          description: A successful response with ReturnCode' = 20000
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.GetOrderResponse'
+              type: object
+        "20001":
+          description: invalid param
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20015":
+          description: Server internal errors, just blame backend engineer
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20026":
+          description: order not found
+          schema:
+            $ref: '#/definitions/common.Response'
+      summary: get orders
+      tags:
+      - order
+    post:
+      consumes:
+      - application/json
+      description: post order
+      parameters:
+      - description: minter address
+        in: path
+        name: address
+        required: true
+        type: string
+      - description: post the transfer* tx hash back to server, let server tracking
+          orders
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/model.PostOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "20000":
+          description: A successful response with ReturnCode' = 20000
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20001":
+          description: invalid param
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20015":
+          description: Server internal errors, just blame backend engineer
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20024":
+          description: transaction not found
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20027":
+          description: this chain id is not supported
+          schema:
+            $ref: '#/definitions/common.Response'
+      summary: post order
+      tags:
+      - order
+  /whitelist/{address}:
+    get:
+      consumes:
+      - application/json
+      description: get whitelist
+      parameters:
+      - description: minter address
+        in: path
+        name: address
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "20000":
+          description: A successful response with ReturnCode' = 20000
+          schema:
+            allOf:
+            - $ref: '#/definitions/common.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/api.GetWhitelistResponse'
+              type: object
+        "20001":
+          description: invalid param
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20015":
+          description: Server internal errors, just blame backend engineer
+          schema:
+            $ref: '#/definitions/common.Response'
+        "20024":
+          description: not have whitelist yet
+          schema:
+            $ref: '#/definitions/common.Response'
+      summary: get whitelist
+      tags:
+      - whitelist
+schemes:
+- https
+swagger: "2.0"
