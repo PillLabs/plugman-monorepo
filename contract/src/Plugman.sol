@@ -35,44 +35,87 @@ import {OnchainTraits, DynamicTraits} from "shipyard-core/src/dynamic-traits/Onc
 ░▒▓█▓▒░        ░▒▓████████▓▒░  ░▒▓██████▓▒░   ░▒▓██████▓▒░  ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░░▒▓█▓▒░
 */
 
-
+/**
+ * @title Plugman
+ * @author Plugman
+ * @dev This contract implements an ERC-721A NFT contract compatible with
+ * the ERC-7496 interface.
+ * It includes the necessary minting implementations and interfaces for
+ * future contract integrations.
+ * Clients on the ZetaChain can interact directly with this contract to mint.
+ * Clients on other chains (Ethereum and Polygon) need to interact through
+ * ZetaChain's system contract to call the ShuttleMachine contract (for
+ * relaying cross-chain minting requests).
+ * This contract uses the MintVerifier contract to verify the metadata
+ * signature.
+ */
 contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
 
+    /**
+    * @dev Emitted after minting
+    * @param to Address that should receive the minted NFTs
+    * @param nonce Used by the off-chain trait generator to maintain and
+    * track minting
+    * @param firstTokenId Token ID of the first token minted in this transaction
+    * @param mintType Type of minting
+    */
     event Mint(address indexed to, uint256 nonce, uint256 firstTokenId, uint8 mintType);
 
     using LibString for uint256;
 
+    // Indicates if the whitelist sale is locked
     bool public WLLocked;
+    // Indicates if the public sale is locked
     bool public publicSaleLocked;
+    // Indicates if Plugman NFTs are plugable.
+    // One Plugman NFT owns three plugable traits which will also be NFTs in
+    // the future.
     bool public plugable;
 
+    // Restricts the contract owner from modifying traits metadata
+    // This may be necessary to fix metadata bugs after minting, if any
     bool private lockOwnerTraitModify;
 
+    // MintType definitions
     uint8 constant OG = 1;
     uint8 constant WL = 2;
     uint8 constant PublicSale = 3;
 
-    // max supply
+    // Maximum supply of NFTs
     uint256 private immutable PLUGMAN_MAX = 3369;
+    // Maximum number of NFTs mintable per transaction
     uint256 private immutable MAX_PER_MINT = 5;
 
-    // prices
+    // Pricing for different sales
     uint256 private wlPrice = 0.029 ether;
     uint256 private publicSalePrice = 0.049 ether;
 
+    // Timestamp when the whitelist sale starts
     uint256 public WLStartTimestamp;
+    // Timestamp when the public sale starts
     uint256 public publicSaleStartTimestamp;
+    // Token ID at which the current batch of minting ends.
+    // Plugman mints in batches.
     uint256 public batchMax;
+    // Timestamp until which the Plugman metadata is revealed
     uint256 public revealedUntil;
 
+    // Tracking nonce for the whitelist sale
     mapping(address => uint256) public WLNonce;
+    // Tracking nonce for the public sale
     mapping(address => uint256) public PublicSaleNonce;
+    // Addresses of "ShuttleMachine Contracts" - serve as cross-chain
+    // minting gateways.
     mapping(address => bool) public shuttleMachineAddresses;
 
+    // Address of "MintVerifier Contract" - verifies metadata generated
+    // and signed by the off-chain generator
     address private immutable mintVerifier;
+    // Address of "SafeRoom Contract" - future feature for plugging and
+    // unplugging trait NFTs
     address private safeRoomAddress;
 
-    // Dynamic trait key
+    // Keys for dynamic traits
     bytes32 private constant BodyTraitKey = bytes32("body");
     bytes32 private constant BodyColorTraitKey = bytes32("bodyColor");
     bytes32 private constant BackgroundTraitKey = bytes32("background");
@@ -80,6 +123,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     bytes32 private constant SideTraitKey = bytes32("side");
     bytes32 private constant TopTraitKey = bytes32("top");
 
+    // Base URI for NFT images
     string private imageBaseUri;
 
     // Errors
@@ -122,6 +166,16 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*                        Constructor                         */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /**
+    * @dev Constructor.
+    * Plugman is constructed using the ERC721A constructor function and
+    * the ERC7496 constructor function.
+    * This constructor also create storage for trait labels.
+    * @param __name Name of ERC721 NFT
+    * @param __symbol Symbol of ERC721 NFT
+    * @param __mintVerifier Address of "MintVerifier Contract"
+    * @param __batchMax Token ID at which the current batch of minting ends
+    */
     constructor(string memory __name, string memory __symbol, address __mintVerifier, uint256 __batchMax)
         ERC721A(__name, __symbol)
         OnchainTraits()
@@ -221,11 +275,17 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*                        Modifiers                           */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /**
+    * @dev Modifier to check if plugging or unplugging operations are allowed.
+    */
     modifier isPlugable() {
         if (safeRoomAddress == address(0) || msg.sender != safeRoomAddress || !plugable) revert IsNotPlugable();
         _;
     }
 
+    /**
+    * @dev Modifier to check if a given trait key is valid.
+    */
     modifier isValidTraitKey(bytes32 traitKey) {
         if (traitKey != FrontTraitKey &&
             traitKey != SideTraitKey &&
@@ -233,15 +293,27 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         _;
     }
 
+    /**
+    * @dev Modifier to ensure that the signature has not expired.
+    */
     modifier isSignatureTimeout(uint256 timestamp) {
         if (block.timestamp >=  timestamp) revert InvalidTimestamp();
         _;
     }
 
+    /**
+    * @notice Returns true if the public sale is currently active.
+    * @return True if the public sale is ongoing.
+    */
     function isPublicSaleOpen() public view returns (bool) {
         return block.timestamp >= publicSaleStartTimestamp && publicSaleStartTimestamp != 0 && !publicSaleLocked;
     }
 
+    /**
+    * @notice Returns true if the whitelist sale is currently active,
+    * automatically ends when the public sale starts.
+    * @return True if the whitelist sale is ongoing.
+    */
     function isWLSaleOpen() public view returns (bool) {
         return !isPublicSaleOpen() && block.timestamp >= WLStartTimestamp && WLStartTimestamp != 0 && !WLLocked;
     }
@@ -251,6 +323,10 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*                           IERC165                          */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /**
+    * @dev Implements IERC165 interface detection in a way compatible
+    * with ERC721A and DynamicTraits.
+    */
     function supportsInterface(bytes4 interfaceId) public view virtual override(ERC721A, IERC721A, DynamicTraits) returns (bool) {
         return ERC721A.supportsInterface(interfaceId) || DynamicTraits.supportsInterface(interfaceId);
     }
@@ -260,69 +336,140 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*                   Only Owner Functions                     */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /**
+    * @dev Sets the start timestamp for the whitelist sale.
+    * Only callable by the owner.
+    */
     function setWLStartTimestamp(uint256 timestamp) external onlyOwner {
         WLStartTimestamp = timestamp;
     }
 
+    /**
+    * @dev Sets the start timestamp for the public sale.
+    * Only callable by the owner.
+    */
     function setPublicSaleTimestamp(uint256 timestamp) external onlyOwner {
         publicSaleStartTimestamp = timestamp;
     }
 
+    /**
+    * @dev Toggles the status of the whitelist sale, allowing manual
+    * control for special circumstances.
+    * Only callable by the owner.
+    */
     function toggleWLSale() external onlyOwner {
         WLLocked = !WLLocked;
     }
 
+    /**
+    * @dev Toggles the status of the public sale, allowing manual
+    * control for special circumstances.
+    * Only callable by the owner.
+    */
     function toggleSale() external onlyOwner {
         publicSaleLocked = !publicSaleLocked;
     }
 
+    /**
+    * @dev Sets the maximum number of batch mintable tokens.
+    * Will be used in following batches.
+    * Only callable by the owner, within predefined limits.
+    */
     function setBatchMax(uint256 _batchMax) external onlyOwner {
         if (_batchMax < batchMax || _batchMax > PLUGMAN_MAX) revert InvalidBatchMax();
         batchMax = _batchMax;
     }
-    
+
+    /**
+    * @dev Sets the price for the whitelist sale.
+    * Will be used in following batches.
+    * Only callable by the owner.
+    */
     function setWLPrice(uint256 __wlPrice) external onlyOwner {
         wlPrice = __wlPrice;
     }
 
+    /**
+    * @dev Sets the price for the public sale.
+    * Will be used in following batches.
+    * Only callable by the owner.
+    */
     function setPublicPrice(uint256 __publicSalePrice) external onlyOwner {
         publicSalePrice = __publicSalePrice;
     }
 
+    /**
+    * @dev Sets the address of the Safe Room Contract.
+    * Only callable by the owner.
+    */
     function setSafeRoomAddress(address __safeRoomAddress) external onlyOwner {
         safeRoomAddress = __safeRoomAddress;
     }
 
+    /**
+    * @dev Registers an address as a ShuttleMachine Contract.
+    * Only callable by the owner.
+    */
     function setShuttleMachine(address __shuttleMachineAddress) external onlyOwner {
         shuttleMachineAddresses[__shuttleMachineAddress] = true;
     }
 
+    /**
+    * @dev Unregisters an address as a ShuttleMachine Contract.
+    * Only callable by the owner.
+    */
     function unsetShuttleMachine(address __shuttleMachineAddress) external onlyOwner {
         shuttleMachineAddresses[__shuttleMachineAddress] = false;
     }
 
+    /**
+    * @dev Toggles the global configuration allowing or disallowing
+    * plugging/unplugging.
+    * Only callable by the owner.
+    */
     function togglePlugable() external onlyOwner {
         plugable = !plugable;
     }
 
+    /**
+    * @dev Sets the base URI for NFT images.
+    * Only callable by the owner.
+    */
     function setImageBaseUri(string calldata uri) external onlyOwner {
         imageBaseUri = uri;
     }
 
+    /**
+    * @dev Corrects metadata bugs for a specific token and trait.
+    * Only callable by the owner.
+    */
     function ownerFixTraits(uint256 tokenId, bytes32 traitKey, bytes32 trait) external onlyOwner {
         if (lockOwnerTraitModify) revert OwnerCannotFixTraits();
         _setTrait(tokenId, traitKey, trait);
         emit TraitUpdated(traitKey, tokenId, trait);
     }
 
+    /**
+    * @dev Sets the last token ID for which the reveal is allowed
+    * (because Plugman mints in batches)
+    * Only callable by the owner.
+    */
     function revealUntil(uint256 tokenId) external onlyOwner {
         revealedUntil = tokenId;
     }
 
+    /**
+    * @dev Locks the ability to modify NFT metadata.
+    * Only callable by the owner.
+    */
     function lockingOwnerTraitModify() external onlyOwner {
         lockOwnerTraitModify = true;
     }
 
+    /**
+    * @dev Withdraws minting fees collected on the ZetaChain network.
+    * Only callable by the owner.
+    */
     function withdraw() external onlyOwner {
         (bool success,) = msg.sender.call{value : address(this).balance}('');
         if (!success) revert WithdrawFailed();
@@ -332,6 +479,19 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*                       Mint Functions                       */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /**
+    * @notice mintOG For the native chain client, used to airdrop NFTs
+    * to a specific address without charging the price of the NFT.
+    * Emits a Mint event on successful call.
+    * Only callable by the owner.
+    * @param to Address that should receive the minted NFTs
+    * @param _count Number of NFTs to mint
+    * @param _nonce Used by the metadata generator to track minting outcomes
+    * @param timestamp Deadline for the metadata generator's signature validity
+    * @param traitValue Trait information in the metadata
+    * @param signature EIP712 signature by the metadata generator for the metadata
+    * and related content
+    */
     function mintOG(address to, uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
             external nonReentrant onlyOwner isSignatureTimeout(timestamp)
     {
@@ -343,6 +503,16 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         emit Mint(to, _nonce, firstTokenId, OG);
     }
 
+    /**
+    * @notice mintWL For the native chain client, used for whitelist sales.
+    * Emits a Mint event on successful call.
+    * @param _count Number of NFTs to mint
+    * @param _nonce Used by the metadata generator to track minting outcomes
+    * @param timestamp Deadline for the metadata generator's signature validity
+    * @param traitValue Trait information in the metadata
+    * @param signature EIP712 signature by the metadata generator for the metadata
+    * and related content
+    */
     function mintWL(uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
             external payable nonReentrant isSignatureTimeout(timestamp)
     {
@@ -358,6 +528,16 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         emit Mint(msg.sender, _nonce, firstTokenId, WL);
     }
 
+    /**
+    * @notice mintPublicSale For the native chain client, used for public sales.
+    * Emits a Mint event on successful call.
+    * @param _count Number of NFTs to mint
+    * @param _nonce Used by the metadata generator to track minting outcomes
+    * @param timestamp Deadline for the metadata generator's signature validity
+    * @param traitValue Trait information in the metadata
+    * @param signature EIP712 signature by the metadata generator for the metadata
+    * and related content
+    */
     function mintPublicSale(uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
             external payable nonReentrant isSignatureTimeout(timestamp)
     {
@@ -373,6 +553,18 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         emit Mint(msg.sender, _nonce, firstTokenId, PublicSale);
     }
 
+    /**
+    * @notice mintWLCrossChain For the ShuttleMachine Contract, used in
+    * cross-chain whitelist sales.
+    * Emits a Mint event on successful call.
+    * @param to Address that should receive the minted NFTs
+    * @param _count Number of NFTs to mint
+    * @param _nonce Used by the metadata generator to track minting outcomes
+    * @param timestamp Deadline for the metadata generator's signature validity
+    * @param traitValue Trait information in the metadata
+    * @param signature EIP712 signature by the metadata generator for the metadata
+    * and related content
+    */
     function mintWLCrossChain(address to, uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
     external payable nonReentrant isSignatureTimeout(timestamp)
     {
@@ -387,6 +579,18 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         emit Mint(to, _nonce, firstTokenId, WL);
     }
 
+    /**
+    * @notice mintPublicCrossChain For the ShuttleMachine Contract, used in
+    * cross-chain public sales
+    * Emits a Mint event on successful call.
+    * @param to Address that should receive the minted NFTs
+    * @param _count Number of NFTs to mint
+    * @param _nonce Used by the metadata generator to track minting outcomes
+    * @param timestamp Deadline for the metadata generator's signature validity
+    * @param traitValue Trait information in the metadata
+    * @param signature EIP712 signature by the metadata generator for the metadata
+    * and related content
+    */
     function mintPublicCrossChain(address to, uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
     external nonReentrant isSignatureTimeout(timestamp)
     {
@@ -401,6 +605,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         emit Mint(to, _nonce, firstTokenId, PublicSale);
     }
 
+    /**
+    * @dev _verifyAndMint Verifies metadata generator's signature and mints new tokens.
+    */
     function _verifyAndMint(
             address to,
             uint256 _count,
@@ -420,6 +627,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         _setTraitsAfterMint(_count, firstTokenId, traitValue);
     }
 
+    /**
+    * @dev _setTraitsAfterMint Sets dynamic on-chain traits after minting.
+    */
     function _setTraitsAfterMint(uint256 _count, uint256 firstTokenId, bytes32[] calldata traitValue) internal {
         if (_count * 6 != traitValue.length) revert InvalidTraitValue();
         for (uint256 i = 0; i < _count; i++) {
@@ -437,6 +647,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*                  EIP-712 Verifier Functions                */
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
+    /**
+    * @dev mintVerify Calls the MintVerifier contract to verify the EIP712 signature.
+    */
     function mintVerify(
         bytes calldata _signature,
         address _mintTo,
@@ -454,6 +667,14 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
 
+    /**
+    * @dev Provides a token URI with metadata for a given token ID. Overrides ERC721A and IERC721A implementations.
+    * @param tokenId The ID of the token for which metadata is requested.
+    * @return A string representing a URI that points to the token's metadata.
+    * The metadata includes the token's name, description, image URL, and an array of attributes.
+    * Depending on whether the token ID is less than or equal to `revealedUntil`, it will show either all attributes (static and dynamic)
+    * or only static attributes. The metadata is encoded in Base64 and prefixed with the appropriate data URI scheme.
+    */
     function tokenURI(uint256 tokenId) public view override(ERC721A, IERC721A) returns (string memory) {
         string[] memory staticTraits = _staticAttributes(tokenId);
         string[] memory dynamicTraits = _dynamicAttributes(tokenId);
@@ -479,6 +700,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         return string(abi.encodePacked('data:application/json;base64,', Base64.encode(bytes(uri))));
     }
 
+    /**
+    * @dev Generates an array of static attribute strings for a given token ID.
+    */
     function _staticAttributes(uint256 tokenId) internal view returns (string[] memory) {
 
         return Solarray.strings(
@@ -492,18 +716,25 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /**
-     * @dev Overrides OnchainTraits' setTrait
-     * Due to plug/unplug feature, the traits can be set only when the value is empty
+     * @dev Overrides OnchainTraits' setTrait to include plug/unplug feature.
+     * @param tokenId ID of the token to update traits.
+     * @param traitKey Key for the trait to update.
+     * @param trait New trait value to set; only empty trait values can be updated.
      */
 
     function setTrait(uint256 tokenId, bytes32 traitKey, bytes32 trait) public override isPlugable isValidTraitKey(traitKey) {
         bytes32 traitValue = getTraitValue(tokenId, traitKey);
-        // only can set empty trait
+        // can set empty trait only
         if (traitValue != bytes32(0)) revert TraitValueNotEmpty();
         _setTrait(tokenId, traitKey, trait);
         emit TraitUpdated(traitKey, tokenId, trait);
     }
 
+    /**
+     * @dev Deletes a specific trait for a token.
+     * @param traitKey Key of the trait to delete.
+     * @param tokenId ID of the token.
+     */
     function deleteTrait(bytes32 traitKey, uint256 tokenId) public isPlugable isValidTraitKey(traitKey) {
         _setTrait(tokenId, traitKey, bytes32(0));
         emit TraitUpdated(traitKey, tokenId, bytes32(0));

@@ -7,22 +7,32 @@ import "@zetachain/toolkit/contracts/BytesHelperLib.sol";
 import "@zetachain/toolkit/contracts/OnlySystem.sol";
 import "./interface/IPlugman.sol";
 
-
+/**
+ * @title ShuttleMachine
+ * @author Plugman
+ * @dev This contract that handles cross-chain minting of tokens,
+ * inheriting from zContract and OnlySystem.
+ */
 contract ShuttleMachine is zContract, OnlySystem {
 
+    // Event that logs cross-chain minting operations
     event CrossChainMint(address indexed to, address sender, uint256 count, uint256 nonce, uint8 mintType);
 
     // cross chain zeta contract
     SystemContract public immutable systemContract;
+    // Specific chain ID where minting is permitted
     uint256 private immutable permitChainId;
+    // Address of the Plugman contract which handles the actual token minting
     address public immutable plugmanAddress;
+    // Address of the treasury where funds are collected
     address public immutable treasuryAddress;
 
-    // mint types
+    // Mint types identifiers
     uint8 private constant WL_SALE = 2;
     uint8 private constant PUBLIC_SALE = 3;
 
-    // prices
+    // Fixed prices of the crossed-chain native coin for whitelist sales
+    // and public sales
     uint256 public immutable wlPrice;
     uint256 public immutable publicSalePrice;
 
@@ -35,6 +45,7 @@ contract ShuttleMachine is zContract, OnlySystem {
     error TransferToTreasuryFailed();
     error NotSupportThisMintType();
 
+    // Struct to hold parameters for cross-chain minting operations
     struct CrossChainMintParams {
         address to;
         uint256 count;
@@ -45,6 +56,16 @@ contract ShuttleMachine is zContract, OnlySystem {
         bytes signature;
     }
 
+    /**
+    * @dev Constructor.
+    * Initialize contract with specific addresses and prices
+    * @param __systemContractAddress Address of ZetaChain system contract
+    * @param __plugmanAddress Address of Plugman contract
+    * @param __treasuryAddress Address of the treasury where funds are collected
+    * @param __permitChainId Specific chain ID where minting is permitted
+    * @param __wlPrice Fixed prices of the crossed-chain native coin
+    * @param __publicSalePrice Fixed prices of the crossed-chain native coin
+    */
     constructor(
         address __systemContractAddress,
         address __plugmanAddress,
@@ -60,6 +81,7 @@ contract ShuttleMachine is zContract, OnlySystem {
         publicSalePrice = __publicSalePrice;
     }
 
+    // Function to handle incoming cross-chain calls, restricted to the system context
     function onCrossChainCall(
         zContext calldata context,
         address zrc20,
