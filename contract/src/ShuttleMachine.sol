@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.8;
+pragma solidity 0.8.25;
 
 import "@zetachain/protocol-contracts/contracts/zevm/SystemContract.sol";
 import "@zetachain/protocol-contracts/contracts/zevm/interfaces/zContract.sol";
 import "@zetachain/toolkit/contracts/BytesHelperLib.sol";
 import "@zetachain/toolkit/contracts/OnlySystem.sol";
 import "./interface/IPlugman.sol";
+import {Errors} from "./library/Errors.sol";
 
 /**
  * @title ShuttleMachine
@@ -36,15 +37,6 @@ contract ShuttleMachine is zContract, OnlySystem {
     uint256 public immutable wlPrice;
     uint256 public immutable publicSalePrice;
 
-    error CallerNotOwnerNotApproved();
-    error OriginChainNotSupported();
-    error InvalidCoinValue();
-    error InvalidCoinAddress();
-    error InvalidSender();
-    error InvalidBalance();
-    error TransferToTreasuryFailed();
-    error NotSupportThisMintType();
-
     // Struct to hold parameters for cross-chain minting operations
     struct CrossChainMintParams {
         address to;
@@ -73,6 +65,9 @@ contract ShuttleMachine is zContract, OnlySystem {
         uint256 __permitChainId,
         uint256 __wlPrice,
         uint256 __publicSalePrice) {
+        if (__systemContractAddress == address(0)) revert Errors.ZeroAddressNotAllowed();
+        if (__plugmanAddress == address(0)) revert Errors.ZeroAddressNotAllowed();
+        if (__treasuryAddress == address(0)) revert Errors.ZeroAddressNotAllowed();
         systemContract = SystemContract(__systemContractAddress);
         plugmanAddress = __plugmanAddress;
         treasuryAddress = __treasuryAddress;
@@ -91,15 +86,13 @@ contract ShuttleMachine is zContract, OnlySystem {
         CrossChainMintParams memory params;
 
         if (context.chainID != permitChainId) {
-            revert OriginChainNotSupported();
+            revert Errors.OriginChainNotSupported();
         }
 
         address zrc20__ = systemContract.gasCoinZRC20ByChainId(
             context.chainID
         );
-        if (zrc20 != zrc20__) revert InvalidCoinAddress();
-
-        // if (context.sender != params.to) revert InvalidSender();
+        if (zrc20 != zrc20__) revert Errors.InvalidCoinAddress();
 
         bytes memory data = abi.decode(message, (bytes));
         params = abi.decode(data, (CrossChainMintParams));
@@ -109,28 +102,28 @@ contract ShuttleMachine is zContract, OnlySystem {
         } else if (params.mintType == PUBLIC_SALE) {
             mintPublic(params, zrc20, amount);
         } else {
-            revert NotSupportThisMintType();
+            revert Errors.NotSupportThisMintType();
         }
 
         emit CrossChainMint(params.to, context.sender, params.count, params.nonce, params.mintType);
     }
 
     function mintWL(CrossChainMintParams memory params, address zrc20, uint256 amount) internal {
-        if (amount < params.count * wlPrice) revert InvalidCoinValue();
+        if (amount < params.count * wlPrice) revert Errors.InvalidCoinValue();
         transferToTreasury(zrc20, amount);
         PlugmanInterface(plugmanAddress).mintWLCrossChain(params.to, params.count, params.nonce, params.timestamp, params.traitValue, params.signature);
     }
 
     function mintPublic(CrossChainMintParams memory params, address zrc20, uint256 amount) internal {
-        if (amount < params.count * publicSalePrice) revert InvalidCoinValue();
+        if (amount < params.count * publicSalePrice) revert Errors.InvalidCoinValue();
         transferToTreasury(zrc20, amount);
         PlugmanInterface(plugmanAddress).mintPublicCrossChain(params.to, params.count, params.nonce, params.timestamp, params.traitValue, params.signature);
     }
 
     function transferToTreasury(address zrc20, uint256 amount) internal {
         uint256 balance = IZRC20(zrc20).balanceOf(address(this));
-        if (balance < amount) revert InvalidBalance();
+        if (balance < amount) revert Errors.InvalidBalance();
         bool transferred = IZRC20(zrc20).transfer(treasuryAddress, balance);
-        if (!transferred) revert TransferToTreasuryFailed();
+        if (!transferred) revert Errors.TransferToTreasuryFailed();
     }
 }

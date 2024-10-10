@@ -240,13 +240,13 @@ contract PlugmanTest is Test {
         plugman.mintWL{value: depositAmount}(_count, 6, _timestamp, traitValue, signature);
 
         vm.expectRevert(NonceIsTooOld.selector);
-        plugman.mintWL{value: depositAmount}(1, 3, _timestamp, traitValue, signature);
+        plugman.mintWL{value: 0.029 ether}(1, 3, _timestamp, traitValue, signature);
 
         _count = 1;
         _nonce = 7;
         signature = signMintEIP712(_to, _count, _nonce, _timestamp, traitValue, 2);
         vm.expectRevert(InvalidTraitValue.selector);
-        plugman.mintWL{value: depositAmount}(_count, _nonce, _timestamp, traitValue, signature);
+        plugman.mintWL{value: 0.029 ether}(_count, _nonce, _timestamp, traitValue, signature);
 
         traitValue = getTraitValues(_count);
         signature = signMintEIP712(_to, _count, _nonce, _timestamp, traitValue, 2);
@@ -254,7 +254,7 @@ contract PlugmanTest is Test {
         nextTokenId = totalSupplyBeforeMint + 1;
         vm.expectEmit(true, false, false, true);
         emit Mint(_to, _nonce, nextTokenId, 2);
-        plugman.mintWL{value: depositAmount}(_count, _nonce, _timestamp, traitValue, signature);
+        plugman.mintWL{value: 0.029 ether}(_count, _nonce, _timestamp, traitValue, signature);
         uint256[] memory tokenIds = plugman.tokensOfOwner(_to);
         uint256 len = tokenIds.length;
         assertEqUint(tokenIds[len - 1], 7);

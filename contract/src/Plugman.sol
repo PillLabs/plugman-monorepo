@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Plugman@ZetaChain
-pragma solidity ^0.8.7;
+pragma solidity 0.8.25;
 
 import {ERC721A, IERC721A} from "ERC721A/ERC721A.sol";
 import {ERC721AQueryable} from "ERC721A/extensions/ERC721AQueryable.sol";
@@ -15,14 +15,12 @@ import {
     Editors,
     EditorsLib,
     FullTraitValue,
-    TraitLabel,
-    TraitLabelStorage,
-    StoredTraitLabel,
-    StoredTraitLabelLib
+    TraitLabel
 } from "shipyard-core/src/dynamic-traits/lib/TraitLabelLib.sol";
 import {Metadata, DisplayType} from "shipyard-core/src/onchain/Metadata.sol";
 import {json} from "shipyard-core/src/onchain/json.sol";
 import {OnchainTraits, DynamicTraits} from "shipyard-core/src/dynamic-traits/OnchainTraits.sol";
+import {Errors} from "./library/Errors.sol";
 
 
 /*
@@ -60,6 +58,19 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * @param mintType Type of minting
     */
     event Mint(address indexed to, uint256 nonce, uint256 firstTokenId, uint8 mintType);
+    event SetTimestamp(uint256 timestamp, uint8 mintType);
+    event ToggleSaleStatus(uint8 mintType);
+    event SetSalePrice(uint256 price, uint8 mintType);
+    event SetBatchMax(uint256 batchMax);
+    event SetSafeRoom(address newSafeRoomAddress);
+    event SetShuttleMachine(address shuttleMachineAddress);
+    event UnsetShuttleMachine(address shuttleMachineAddress);
+    event TogglePlugable();
+    event SetImageBaseUri();
+    event Withdraw(address receiver, uint256 amount);
+    event RevealUntil(uint256 tokenId);
+    event LockOwnerTraitModifying();
+
 
     using LibString for uint256;
 
@@ -126,41 +137,6 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     // Base URI for NFT images
     string private imageBaseUri;
 
-    // Errors
-    error PublicSaleIsNotActive();
-
-    error WLSaleIsNotActive();
-
-    error IsNotPlugable();
-
-    error TraitValueNotEmpty();
-
-    error CanNotCallMintFromContract();
-
-    error InvalidMintAmount();
-
-    error AllTokenHasBeenMinted();
-
-    error InvalidCoinValue();
-
-    error InvalidSignature();
-
-    error InvalidTimestamp();
-
-    error InvalidBatchMax();
-
-    error InvalidTraitValue();
-
-    error InvalidTraitKeys();
-
-    error NonceIsTooOld();
-
-    error OwnerCannotFixTraits();
-
-    error WithdrawFailed();
-
-    error CallerNotApproved();
-
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
     /*                        Constructor                         */
@@ -180,6 +156,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
         ERC721A(__name, __symbol)
         OnchainTraits()
     {
+        if (__mintVerifier == address(0)) revert Errors.ZeroAddressNotAllowed();
         mintVerifier = __mintVerifier;
         batchMax = __batchMax;
 
@@ -279,7 +256,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * @dev Modifier to check if plugging or unplugging operations are allowed.
     */
     modifier isPlugable() {
-        if (safeRoomAddress == address(0) || msg.sender != safeRoomAddress || !plugable) revert IsNotPlugable();
+        if (safeRoomAddress == address(0) || msg.sender != safeRoomAddress || !plugable) revert Errors.IsNotPlugable();
         _;
     }
 
@@ -289,7 +266,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     modifier isValidTraitKey(bytes32 traitKey) {
         if (traitKey != FrontTraitKey &&
             traitKey != SideTraitKey &&
-            traitKey != TopTraitKey) revert InvalidTraitKeys();
+            traitKey != TopTraitKey) revert Errors.InvalidTraitKeys();
         _;
     }
 
@@ -297,7 +274,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * @dev Modifier to ensure that the signature has not expired.
     */
     modifier isSignatureTimeout(uint256 timestamp) {
-        if (block.timestamp >=  timestamp) revert InvalidTimestamp();
+        if (block.timestamp >=  timestamp) revert Errors.InvalidTimestamp();
         _;
     }
 
@@ -342,6 +319,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function setWLStartTimestamp(uint256 timestamp) external onlyOwner {
         WLStartTimestamp = timestamp;
+        emit SetTimestamp(timestamp, WL);
     }
 
     /**
@@ -350,6 +328,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function setPublicSaleTimestamp(uint256 timestamp) external onlyOwner {
         publicSaleStartTimestamp = timestamp;
+        emit SetTimestamp(timestamp, PublicSale);
     }
 
     /**
@@ -359,6 +338,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function toggleWLSale() external onlyOwner {
         WLLocked = !WLLocked;
+        emit ToggleSaleStatus(WL);
     }
 
     /**
@@ -368,6 +348,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function toggleSale() external onlyOwner {
         publicSaleLocked = !publicSaleLocked;
+        emit ToggleSaleStatus(PublicSale);
     }
 
     /**
@@ -376,8 +357,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * Only callable by the owner, within predefined limits.
     */
     function setBatchMax(uint256 _batchMax) external onlyOwner {
-        if (_batchMax < batchMax || _batchMax > PLUGMAN_MAX) revert InvalidBatchMax();
+        if (_batchMax < batchMax || _batchMax > PLUGMAN_MAX) revert Errors.InvalidBatchMax();
         batchMax = _batchMax;
+        emit SetBatchMax(_batchMax);
     }
 
     /**
@@ -387,6 +369,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function setWLPrice(uint256 __wlPrice) external onlyOwner {
         wlPrice = __wlPrice;
+        emit SetSalePrice(__wlPrice, WL);
     }
 
     /**
@@ -396,6 +379,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function setPublicPrice(uint256 __publicSalePrice) external onlyOwner {
         publicSalePrice = __publicSalePrice;
+        emit SetSalePrice(__publicSalePrice, PublicSale);
     }
 
     /**
@@ -403,7 +387,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * Only callable by the owner.
     */
     function setSafeRoomAddress(address __safeRoomAddress) external onlyOwner {
+        if (__safeRoomAddress == address(0)) revert Errors.ZeroAddressNotAllowed();
         safeRoomAddress = __safeRoomAddress;
+        emit SetSafeRoom(__safeRoomAddress);
     }
 
     /**
@@ -411,7 +397,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * Only callable by the owner.
     */
     function setShuttleMachine(address __shuttleMachineAddress) external onlyOwner {
+        if (__shuttleMachineAddress == address(0)) revert Errors.ZeroAddressNotAllowed();
         shuttleMachineAddresses[__shuttleMachineAddress] = true;
+        emit SetShuttleMachine(__shuttleMachineAddress);
     }
 
     /**
@@ -419,7 +407,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * Only callable by the owner.
     */
     function unsetShuttleMachine(address __shuttleMachineAddress) external onlyOwner {
+        if (__shuttleMachineAddress == address(0)) revert Errors.ZeroAddressNotAllowed();
         shuttleMachineAddresses[__shuttleMachineAddress] = false;
+        emit UnsetShuttleMachine(__shuttleMachineAddress);
     }
 
     /**
@@ -429,6 +419,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function togglePlugable() external onlyOwner {
         plugable = !plugable;
+        emit TogglePlugable();
     }
 
     /**
@@ -437,6 +428,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function setImageBaseUri(string calldata uri) external onlyOwner {
         imageBaseUri = uri;
+        emit SetImageBaseUri();
     }
 
     /**
@@ -444,7 +436,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * Only callable by the owner.
     */
     function ownerFixTraits(uint256 tokenId, bytes32 traitKey, bytes32 trait) external onlyOwner {
-        if (lockOwnerTraitModify) revert OwnerCannotFixTraits();
+        if (lockOwnerTraitModify) revert Errors.OwnerCannotFixTraits();
         _setTrait(tokenId, traitKey, trait);
         emit TraitUpdated(traitKey, tokenId, trait);
     }
@@ -456,6 +448,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function revealUntil(uint256 tokenId) external onlyOwner {
         revealedUntil = tokenId;
+        emit RevealUntil(tokenId);
     }
 
     /**
@@ -464,6 +457,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     */
     function lockingOwnerTraitModify() external onlyOwner {
         lockOwnerTraitModify = true;
+        emit LockOwnerTraitModifying();
     }
 
     /**
@@ -471,8 +465,10 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * Only callable by the owner.
     */
     function withdraw() external onlyOwner {
-        (bool success,) = msg.sender.call{value : address(this).balance}('');
-        if (!success) revert WithdrawFailed();
+        uint256 balance = address(this).balance;
+        (bool success,) = msg.sender.call{value : balance}('');
+        if (!success) revert Errors.WithdrawFailed();
+        emit Withdraw(msg.sender, balance);
     }
 
     /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
@@ -495,9 +491,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     function mintOG(address to, uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
             external nonReentrant onlyOwner isSignatureTimeout(timestamp)
     {
-        if (tx.origin != msg.sender) revert CanNotCallMintFromContract();
-        if (_count <= 0 || _count > MAX_PER_MINT) revert InvalidMintAmount();
-        if (totalSupply() + _count > batchMax) revert AllTokenHasBeenMinted();
+        if (tx.origin != msg.sender) revert Errors.CanNotCallMintFromContract();
+        if (_count <= 0 || _count > MAX_PER_MINT) revert Errors.InvalidMintAmount();
+        if (totalSupply() + _count > batchMax) revert Errors.AllTokenHasBeenMinted();
         uint256 firstTokenId = _nextTokenId();
         _verifyAndMint(to, _count, _nonce, timestamp, traitValue, signature, OG, firstTokenId);
         emit Mint(to, _nonce, firstTokenId, OG);
@@ -516,12 +512,12 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     function mintWL(uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
             external payable nonReentrant isSignatureTimeout(timestamp)
     {
-        if (!isWLSaleOpen()) revert WLSaleIsNotActive();
-        if (tx.origin != msg.sender) revert CanNotCallMintFromContract();
-        if (_count <= 0 || _count > MAX_PER_MINT) revert InvalidMintAmount();
-        if (totalSupply() + _count > batchMax) revert AllTokenHasBeenMinted();
-        if (msg.value < _count * wlPrice) revert InvalidCoinValue();
-        if (_nonce <= WLNonce[msg.sender]) revert NonceIsTooOld();
+        if (!isWLSaleOpen()) revert Errors.WLSaleIsNotActive();
+        if (tx.origin != msg.sender) revert Errors.CanNotCallMintFromContract();
+        if (_count <= 0 || _count > MAX_PER_MINT) revert Errors.InvalidMintAmount();
+        if (totalSupply() + _count > batchMax) revert Errors.AllTokenHasBeenMinted();
+        if (msg.value != _count * wlPrice) revert Errors.InvalidCoinValue();
+        if (_nonce <= WLNonce[msg.sender]) revert Errors.NonceIsTooOld();
         uint256 firstTokenId = _nextTokenId();
         _verifyAndMint(msg.sender, _count, _nonce, timestamp, traitValue, signature, WL, firstTokenId);
         WLNonce[msg.sender] = _nonce;
@@ -541,12 +537,12 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     function mintPublicSale(uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
             external payable nonReentrant isSignatureTimeout(timestamp)
     {
-        if (!isPublicSaleOpen()) revert PublicSaleIsNotActive();
-        if (tx.origin != msg.sender) revert CanNotCallMintFromContract();
-        if (_count <= 0 || _count > MAX_PER_MINT) revert InvalidMintAmount();
-        if (totalSupply() + _count > batchMax) revert AllTokenHasBeenMinted();
-        if (msg.value < _count * publicSalePrice) revert InvalidCoinValue();
-        if (_nonce <= PublicSaleNonce[msg.sender]) revert NonceIsTooOld();
+        if (!isPublicSaleOpen()) revert Errors.PublicSaleIsNotActive();
+        if (tx.origin != msg.sender) revert Errors.CanNotCallMintFromContract();
+        if (_count <= 0 || _count > MAX_PER_MINT) revert Errors.InvalidMintAmount();
+        if (totalSupply() + _count > batchMax) revert Errors.AllTokenHasBeenMinted();
+        if (msg.value != _count * publicSalePrice) revert Errors.InvalidCoinValue();
+        if (_nonce <= PublicSaleNonce[msg.sender]) revert Errors.NonceIsTooOld();
         uint256 firstTokenId = _nextTokenId();
         _verifyAndMint(msg.sender, _count, _nonce, timestamp, traitValue, signature, PublicSale, firstTokenId);
         PublicSaleNonce[msg.sender] = _nonce;
@@ -566,13 +562,13 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * and related content
     */
     function mintWLCrossChain(address to, uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
-    external payable nonReentrant isSignatureTimeout(timestamp)
+    external nonReentrant isSignatureTimeout(timestamp)
     {
-        if (!isWLSaleOpen()) revert WLSaleIsNotActive();
-        if (!shuttleMachineAddresses[msg.sender]) revert CallerNotApproved();
-        if (_count <= 0 || _count > MAX_PER_MINT) revert InvalidMintAmount();
-        if (totalSupply() + _count > batchMax) revert AllTokenHasBeenMinted();
-        if (_nonce <= WLNonce[to]) revert NonceIsTooOld();
+        if (!isWLSaleOpen()) revert Errors.WLSaleIsNotActive();
+        if (!shuttleMachineAddresses[msg.sender]) revert Errors.CallerNotApproved();
+        if (_count <= 0 || _count > MAX_PER_MINT) revert Errors.InvalidMintAmount();
+        if (totalSupply() + _count > batchMax) revert Errors.AllTokenHasBeenMinted();
+        if (_nonce <= WLNonce[to]) revert Errors.NonceIsTooOld();
         uint256 firstTokenId = _nextTokenId();
         _verifyAndMint(to, _count, _nonce, timestamp, traitValue, signature, WL, firstTokenId);
         WLNonce[to] = _nonce;
@@ -594,11 +590,11 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     function mintPublicCrossChain(address to, uint256 _count, uint256 _nonce, uint256 timestamp, bytes32[] calldata traitValue, bytes calldata signature)
     external nonReentrant isSignatureTimeout(timestamp)
     {
-        if (!isPublicSaleOpen()) revert PublicSaleIsNotActive();
-        if (!shuttleMachineAddresses[msg.sender]) revert CallerNotApproved();
-        if (_count <= 0 || _count > MAX_PER_MINT) revert InvalidMintAmount();
-        if (totalSupply() + _count > batchMax) revert AllTokenHasBeenMinted();
-        if (_nonce <= PublicSaleNonce[to]) revert NonceIsTooOld();
+        if (!isPublicSaleOpen()) revert Errors.PublicSaleIsNotActive();
+        if (!shuttleMachineAddresses[msg.sender]) revert Errors.CallerNotApproved();
+        if (_count <= 0 || _count > MAX_PER_MINT) revert Errors.InvalidMintAmount();
+        if (totalSupply() + _count > batchMax) revert Errors.AllTokenHasBeenMinted();
+        if (_nonce <= PublicSaleNonce[to]) revert Errors.NonceIsTooOld();
         uint256 firstTokenId = _nextTokenId();
         _verifyAndMint(to, _count, _nonce, timestamp, traitValue, signature, PublicSale, firstTokenId);
         PublicSaleNonce[to] = _nonce;
@@ -620,9 +616,9 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
             internal
     {
         // verify metadata source
-        if (!mintVerify(signature, to, _count, _nonce, _timestamp, traitValue, mintType)) revert InvalidSignature();
+        if (!mintVerify(signature, to, _count, _nonce, _timestamp, traitValue, mintType)) revert Errors.InvalidSignature();
         // ERC721A mint
-        _mint(to, _count);
+        _safeMint(to, _count);
         // set dynamic traits
         _setTraitsAfterMint(_count, firstTokenId, traitValue);
     }
@@ -631,7 +627,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     * @dev _setTraitsAfterMint Sets dynamic on-chain traits after minting.
     */
     function _setTraitsAfterMint(uint256 _count, uint256 firstTokenId, bytes32[] calldata traitValue) internal {
-        if (_count * 6 != traitValue.length) revert InvalidTraitValue();
+        if (_count * 6 != traitValue.length) revert Errors.InvalidTraitValue();
         for (uint256 i = 0; i < _count; i++) {
             _setTrait(firstTokenId + i, BodyTraitKey, traitValue[i * 6 + 0]);
             _setTrait(firstTokenId + i, BodyColorTraitKey, traitValue[i * 6 + 1]);
@@ -725,7 +721,7 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     function setTrait(uint256 tokenId, bytes32 traitKey, bytes32 trait) public override isPlugable isValidTraitKey(traitKey) {
         bytes32 traitValue = getTraitValue(tokenId, traitKey);
         // can set empty trait only
-        if (traitValue != bytes32(0)) revert TraitValueNotEmpty();
+        if (traitValue != bytes32(0)) revert Errors.TraitValueNotEmpty();
         _setTrait(tokenId, traitKey, trait);
         emit TraitUpdated(traitKey, tokenId, trait);
     }
@@ -749,5 +745,4 @@ contract Plugman is ERC721AQueryable, OnchainTraits, ReentrancyGuard {
     function _isOwnerOrApproved(uint256 tokenId, address addr) internal view virtual override returns (bool) {
         return ownerOf(tokenId) == addr || isApprovedForAll(ownerOf(tokenId), addr) || getApproved(tokenId) == addr;
     }
-
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.4;
+pragma solidity 0.8.25;
 
 interface IMintVerifier {
     error ECDSAInvalidSignature();
@@ -7,6 +7,7 @@ interface IMintVerifier {
     error ECDSAInvalidSignatureS(bytes32 s);
     error InvalidShortString();
     error StringTooLong(string str);
+    error ZeroAddressNotAllowed();
 
     event EIP712DomainChanged();
 

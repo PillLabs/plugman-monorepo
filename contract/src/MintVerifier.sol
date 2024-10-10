@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.25;
 
 import {EIP712} from '@openzeppelin/contracts/utils/cryptography/EIP712.sol';
 import {ECDSA} from '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
-
+import {Errors} from "./library/Errors.sol";
 
 /**
  * @title MintVerifier
@@ -27,6 +27,7 @@ contract MintVerifier is EIP712 {
     * @param __metadataCreator Address of the off-chain generator
     */
     constructor(string memory __name, address __metadataCreator ) EIP712(__name, '1') {
+        if (__metadataCreator == address(0)) revert Errors.ZeroAddressNotAllowed();
         metadataCreator = __metadataCreator;
     }
 

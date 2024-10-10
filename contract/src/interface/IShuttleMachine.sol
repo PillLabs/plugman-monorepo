@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.4;
+pragma solidity 0.8.25;
 
 interface IShuttleMachine {
     struct zContext {
@@ -8,15 +8,14 @@ interface IShuttleMachine {
         uint256 chainID;
     }
 
-    error CallerNotOwnerNotApproved();
     error InvalidBalance();
     error InvalidCoinAddress();
     error InvalidCoinValue();
-    error InvalidSender();
     error NotSupportThisMintType();
     error OnlySystemContract(string);
     error OriginChainNotSupported();
     error TransferToTreasuryFailed();
+    error ZeroAddressNotAllowed();
 
     event CrossChainMint(address indexed to, address sender, uint256 count, uint256 nonce, uint8 mintType);
 

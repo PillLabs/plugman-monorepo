@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.8;
+pragma solidity 0.8.25;
 
 type DisplayType is uint8;
 type Editors is uint8;
@@ -78,16 +78,27 @@ error URIQueryForNonexistentToken();
 error Unauthorized();
 error WLSaleIsNotActive();
 error WithdrawFailed();
+error ZeroAddressNotAllowed();
 
 interface PlugmanInterface {
 
     event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
     event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
     event ConsecutiveTransfer(uint256 indexed fromTokenId, uint256 toTokenId, address indexed from, address indexed to);
+    event LockOwnerTraitModifying();
     event Mint(address indexed to, uint256 nonce, uint256 firstTokenId, uint8 mintType);
     event OwnershipHandoverCanceled(address indexed pendingOwner);
     event OwnershipHandoverRequested(address indexed pendingOwner);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
+    event RevealUntil(uint256 tokenId);
+    event SetBatchMax(uint256 batchMax);
+    event SetImageBaseUri();
+    event SetSafeRoom(address newSafeRoomAddress);
+    event SetSalePrice(uint256 price, uint8 mintType);
+    event SetShuttleMachine(address shuttleMachineAddress);
+    event SetTimestamp(uint256 timestamp, uint8 mintType);
+    event TogglePlugable();
+    event ToggleSaleStatus(uint8 mintType);
     event TraitMetadataURIUpdated();
     event TraitUpdated(bytes32 indexed traitKey, uint256 tokenId, bytes32 traitValue);
     event TraitUpdatedList(bytes32 indexed traitKey, uint256[] tokenIds);
@@ -97,6 +108,8 @@ interface PlugmanInterface {
         bytes32 indexed traitKey, uint256 fromTokenId, uint256 toTokenId, bytes32 traitValue
     );
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event UnsetShuttleMachine(address shuttleMachineAddress);
+    event Withdraw(address receiver, uint256 amount);
 
     function PublicSaleNonce(address) external view returns (uint256);
     function WLLocked() external view returns (bool);
@@ -171,7 +184,7 @@ interface PlugmanInterface {
         uint256 timestamp,
         bytes32[] memory traitValue,
         bytes memory signature
-    ) external payable;
+    ) external;
     function name() external view returns (string memory);
     function owner() external view returns (address result);
     function ownerFixTraits(uint256 tokenId, bytes32 traitKey, bytes32 trait) external;
